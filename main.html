@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en">
+	<head>
+		<meta charset="UTF-8">
+		<title>image generator</title>
+		<style>
+			body {
+				background-color: #202020;
+				color: #C0C0C0;
+			}
+		</style>
+	</head>
+	<body>
+		<a>train</a>
+		<button onclick="serverLoadImagesTrain()">Select cloud image</button>
+		<input type="file" id="train_file_input" accept="image/*"><br><br>
+		<a>load</a>
+		<button onclick="serverLoadImagesLoad()">Select cloud image</button>
+		<input type="file" id="load_file_input" accept="image/*"><br><br>
+		<div id="box_server_images"></div>
+		<a for="input_quality">generation quality</a>
+		<input id="input_quality" type="range" min="1" max="64" step="1" value="16">
+		<a id="input_quality_value">16</a><br>
+		<a>generation size</a>
+		<input id="generation_size" type="range" min="64" max="2048" step="64" value="256">
+		<a id="generation_size_value">256</a><br>
+		<a>remix mipmap</a>
+		<input id="remix_mipmap" type="range" min="1" max="16" step="1" value="4">
+		<a id="remix_mipmap_value">4</a><br><br>
+		<div id="client_buttons">
+			<button onclick="imageGenerate()">generate</button>
+			<button onclick="remixImage()">remix</button>
+			<button onclick="imageOutpaint()">outpaint</button>
+			<button onclick="inpaintImage()">inpaint</button>
+			<button onclick="inpaintReverse()">inpaint reverse</button>
+		</div>
+		<br><br>
+		<div id="server_buttons_main">
+			<button onclick="serverGenerateImage()">server generate</button>
+			<button onclick="serverRemixImage()">server remix</button>
+			<button onclick="serverOutpaintImage()">server outpaint</button>
+			<button onclick="serverTrain()">server train</button>
+			<button onclick="modelReset()">reset model</button>
+		</div>
+		<div id="server_buttons_generate" style="display:none">
+			<a>get the image from: </a>
+			<button onclick="serverTrainCloud()">cloud</button>
+			<input type="file" id="server_train_local" accept="image/*">
+		</div>
+		<br><br>
+		<input type="checkbox" id="checkbox_inpaint">
+		<div id="cloud_generated"></div><br>
+		<progress id="progress_bar" value="0"></progress><br>
+		<canvas width="768" height="768" id="canvas" style="border: 2px solid white"></canvas><br>
+	</body>
+</html>
+<script src="main.js"></script>
