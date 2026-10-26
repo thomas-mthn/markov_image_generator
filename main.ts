@@ -633,8 +633,7 @@ async function serverGenerateImage(){
 				if(request.status == 200){
 					let blob = request.response;
 					let url = URL.createObjectURL(blob);
-					console.log(url);
-					let img = document.createElement('img');
+					let img = new Image();
 					img.src = url;
 					img.onload = () => {
 						imageLoad(img);
@@ -645,6 +644,14 @@ async function serverGenerateImage(){
 			request.send(buffer);
 		});
 	}
+}
+
+function imageExport(){
+    let pngUrl = canvas.toDataURL("image/png");
+    let link = document.createElement("a");
+    link.href = pngUrl;
+    link.download = "export.png";
+    link.click();
 }
 
 async function getWasm(){

@@ -24,18 +24,18 @@ constant static int offsets[][2] = {
     {-1, 1},
     { 1,-1},
     { 1, 1},
+
+    {-2, 0},
+    { 2, 0},
+    { 0,-2},
+    { 0, 2},
 };
 
 constant static int offsets_up[][2] = {
-    { 0, -1},
+    { 0, 0},
     { 1, 0},
     { 0, 1},
     { -1, 0},
-
-    {-1, 0},
-    { 1, 0},
-    { 0,-1},
-    { 0, 1},
 };
 
 #define DIMENSIONS ((((countof(offsets) + countof(offsets_up)) * 3) + 3) & ~3)
@@ -144,16 +144,16 @@ constant int weights_inverse[] = {
     3413,3413,3413,
     3413,3413,3413,
     3413,3413,3413,
+    
+    2048,2048,2048,
+    2048,2048,2048,
+    2048,2048,2048,
+    2048,2048,2048,
 
     4096,4096,4096,
-    4096,4096,4096,
-    4096,4096,4096,
-    4096,4096,4096,
-
-    3413,3413,3413,
-    3413,3413,3413,
-    3413,3413,3413,
-    3413,3413,3413,
+    2048,2048,2048,
+    2048,2048,2048,
+    2048,2048,2048,
 };
 
 static int getProbabilityDistance(global GraphNode* probability,uchar* position){
@@ -161,6 +161,15 @@ static int getProbabilityDistance(global GraphNode* probability,uchar* position)
     for(int k = 0;k < DIMENSIONS;k++){
         int rel = position[k] - probability->position[k];
         distance += tAbs(rel) * weights_inverse[k] >> 4;
+    }
+    return distance;
+}
+
+static int getProbabilityDistanceWeights(global GraphNode* probability,uchar* position,int* weights){
+    int distance = 0;
+    for(int k = 0;k < DIMENSIONS;k++){
+        int rel = position[k] - probability->position[k];
+        distance += tAbs(rel) * weights[k] >> 4;
     }
     return distance;
 }
@@ -253,80 +262,92 @@ static global GraphNode* graphInference(global GraphNode* graph,uchar* position,
     return node;
 }
 
-kernel void inferenceBruteForce(global GraphNode* graph,global int* data,global int* indices,int mipmap,int image_size,int n_node){
-    int mipmap_offset = mipmapOffset(image_size,image_size,mipmap);
-    int mipmap_size = image_size >> mipmap;
+kernel void inferenceBruteForce(global GraphNode* graph,global int* data,global int* indices,int mipmap,int width,int height,int n_node,uint rnd_offset,int inpaint){
+    int mipmap_offset = mipmapOffset(width,height,mipmap);
+    int mipmap_width = width >> mipmap;
+    int mipmap_height = height >> mipmap;
 
-    int x = indices[get_global_id(0)] / mipmap_size;
-    int y = indices[get_global_id(0)] % mipmap_size;
+    int x = indices[get_global_id(0)] / mipmap_width;
+    int y = indices[get_global_id(0)] % mipmap_width;
 
-    unsigned rnd_state = get_global_id(0) + 1;
+    if(inpaint && (data[mipmap_offset + x * mipmap_width + y] >> 24 & 0x01))
+        return;
+
+    unsigned rnd_state = get_global_id(0) + (rnd_offset & 0xFF);
 
     int luminance[3] = {0};
     global GraphNode* graph_node;
+
+    int weights_l[DIMENSIONS];
     
     uchar position[DIMENSIONS];
     for(int j = 0;j < DIMENSIONS;j++)
         position[j] = 0;
 
     for(int k = 0;k < countof(offsets);k++){
-        int offset_x = (unsigned)(x + offsets[k][0]) % mipmap_size;
-        int offset_y = (unsigned)(y + offsets[k][1]) % mipmap_size;
+        int offset_x = (unsigned)(x + offsets[k][0]) % mipmap_width;
+        int offset_y = (unsigned)(y + offsets[k][1]) % mipmap_width;
 
-        int color = data[mipmap_offset + offset_x * mipmap_size + offset_y];
+        int color = data[mipmap_offset + offset_x * mipmap_width + offset_y];
 
+        if(color >> 24 & 0x02){
+            for(int c = 0;c < 3;c++)
+                 weights_l[k * 3 + c] = 0;
+        }
+        else{
+            for(int c = 0;c < 3;c++)
+                 weights_l[k * 3 + c] = weights_inverse[k * 3 + c];
+        }
+        
         for(int c = 0;c < 3;c++)
             position[k * 3 + c] = (color >> c * 8 & 0xFF);
     }
     for(int k = 0;k < countof(offsets_up);k++){
-        int offset_x = (unsigned)(x / 2 + offsets_up[k][0]) % (mipmap_size / 2);
-        int offset_y = (unsigned)(y / 2 + offsets_up[k][1]) % (mipmap_size / 2);
+        int offset_x = (unsigned)(x / 2 + offsets_up[k][0]) % (mipmap_width / 2);
+        int offset_y = (unsigned)(y / 2 + offsets_up[k][1]) % (mipmap_width / 2);
 
-        int color = data[mipmap_offset + offset_x * (mipmap_size / 2) + offset_y + mipmap_size * mipmap_size];
+        int color = data[mipmap_offset + offset_x * (mipmap_width / 2) + offset_y + mipmap_width * mipmap_height];
 
         for(int c = 0;c < 3;c++)
             position[countof(offsets) * 3 + k * 3 + c] = (color >> c * 8 & 0xFF);
+        for(int c = 0;c < 3;c++)
+            weights_l[countof(offsets) * 3 + k * 3 + c] = weights_inverse[countof(offsets) * 3 + k * 3 + c];
     }
     int m_score = INT_MAX;
     global GraphNode* selected = 0;
 
     for(int i = 0;i < n_node;i++){
         global GraphNode* node = graph + i;
-        int score = getProbabilityDistance(node,position);
+        int score = getProbabilityDistanceWeights(node,position,weights_l);
         if(score < m_score){
             selected = node;
             m_score = score;
         }
     }
 
-    int min_score = INT_MAX;
-    int min_index;
-    
-    graph_node = selected;
+    int n_sample = 0;
 
-    if(!graph_node){
-        data[mipmap_offset + x * mipmap_size + y] = 0xFF00FF;
+    if(!selected){
+        data[mipmap_offset + x * mipmap_width + y] = 0xFF00FF;
         return;
     }
-    
-    int n_sample = 0;
    
-    for(int j = 0;j < countof(graph_node->sample);j++)
-        n_sample += graph_node->sample[j].n_sample;
+    for(int j = 0;j < countof(selected->sample);j++)
+        n_sample += selected->sample[j].n_sample;
 
     if(!n_sample){
-        data[mipmap_offset + x * mipmap_size + y] = 0xFF00FF;
+        data[mipmap_offset + x * mipmap_width + y] = 0xFF00FF;
         return;
     }
    
-    for(int j = 0;j < countof(graph_node->sample);j++){
-        if(tRnd(&rnd_state) % n_sample < graph_node->sample[j].n_sample){
-            data[mipmap_offset + x * mipmap_size + y] = graph_node->sample[j].color;
+    for(int j = 0;j < countof(selected->sample);j++){
+        if(tRnd(&rnd_state) % n_sample < selected->sample[j].n_sample){
+            data[mipmap_offset + x * mipmap_width + y] = selected->sample[j].color & 0xFFFFFF;
             return;
         }
-        n_sample -= graph_node->sample[j].n_sample;
+        n_sample -= selected->sample[j].n_sample;
     }
-    data[mipmap_offset + x * mipmap_size + y] = 0x00FF00;
+    data[mipmap_offset + x * mipmap_width + y] = 0x00FF00;
 }
 
 kernel void inference(global GraphNode* graph,global int* data,global int* indices,int mipmap,int quality,int image_size,int n_node){
@@ -388,158 +409,4 @@ kernel void inference(global GraphNode* graph,global int* data,global int* indic
         n_sample -= graph_node->sample[j].n_sample;
     }
     data[mipmap_offset + x * mipmap_size + y] = 0x00FF00;
-}
-
-constant static int sfx_offsets[] = {
-    -6,
-    -5,
-    -4,
-    -3,
-    -2,
-    -1,
-    1,
-    2,
-    3,
-    4,
-    5,
-    6,
-};
-
-constant static int sfx_offsets_up[] = {
-    -6,
-    -5,
-    -4,
-    -3,
-    -2,
-    -1,
-    1,
-    2,
-    3,
-    4,
-    5,
-    6,
-};
-
-#define SFX_DIMENSIONS (countof(sfx_offsets) + countof(sfx_offsets_up))
-
-structure(SfxGraphNode){
-    short position[SFX_DIMENSIONS];
-    int neighbours[0x10];
-    int next;
-    struct{
-        int n_sample;
-        int color;
-    } sample[8];
-    unsigned hash;
-};
-
-constant static int sfx_weights[] = {
-    256 / 6,
-    256 / 5,
-    256 / 4,
-    256 / 3,
-    256 / 2,
-    256,
-    256,
-    256 / 2,
-    256 / 3,
-    256 / 4,
-    256 / 5,
-    256 / 6,
-
-    256 / 6,
-    256 / 5,
-    256 / 4,
-    256 / 3,
-    256 / 2,
-    256,
-    256,
-    256 / 2,
-    256 / 3,
-    256 / 4,
-    256 / 5,
-    256 / 6,
-};
-
-static int getProbabilityDistanceSfx(global SfxGraphNode* probability,short* position){
-    int distance = 0;
-    for(int k = 0;k < SFX_DIMENSIONS;k++){
-        int rel = position[k] - probability->position[k];
-        distance += tAbs(rel) * sfx_weights[k] >> 4;
-    }
-    return distance;
-}
-
-int mipmapOffsetSfx(int size,int mipmap){
-    int offset = 0;
-    for(int i = 0;i < mipmap;i++)
-        offset += (size >> i);
-    return offset;
-}
-
-kernel void inferenceBruteForceSfx(global SfxGraphNode* graph,global ushort* data,global int* indices,int mipmap,int image_size,int n_node){
-    int mipmap_offset = mipmapOffsetSfx(image_size,mipmap);
-    int mipmap_size = image_size >> mipmap;
-
-    int x = indices[get_global_id(0)];
-
-    unsigned rnd_state = get_global_id(0) + 1;
-
-    int luminance[3] = {0};
-    global SfxGraphNode* graph_node;
-    
-    short position[SFX_DIMENSIONS];
-    for(int j = 0;j < SFX_DIMENSIONS;j++)
-        position[j] = 0;
-
-    for(int k = 0;k < countof(sfx_offsets);k++){
-        int offset_x = (unsigned)(x + sfx_offsets[k]) % mipmap_size;
-
-        position[k] = data[mipmap_offset + offset_x];
-    }
-    for(int k = 0;k < countof(sfx_offsets_up);k++){
-        int offset_x = (unsigned)(x / 2 + sfx_offsets_up[k]) % (mipmap_size / 2);
-
-        position[countof(sfx_offsets) + k] = data[mipmap_offset + offset_x + mipmap_size];
-    }
-    int m_score = INT_MAX;
-    global SfxGraphNode* selected = 0;
-
-    for(int i = 0;i < n_node;i++){
-        global SfxGraphNode* node = graph + i;
-        int score = getProbabilityDistanceSfx(node,position);
-        if(score < m_score){
-            selected = node;
-            m_score = score;
-        }
-    }
-
-    int min_score = INT_MAX;
-    int min_index;
-    
-    graph_node = selected;
-
-    if(!graph_node){
-        data[mipmap_offset + x] = 0x00FF;
-        return;
-    }
-    
-    int n_sample = 0;
-   
-    for(int j = 0;j < countof(graph_node->sample);j++)
-        n_sample += graph_node->sample[j].n_sample;
-
-    if(!n_sample){
-        data[mipmap_offset + x] = 0x00FF;
-        return;
-    }
-   
-    for(int j = 0;j < countof(graph_node->sample);j++){
-        if(tRnd(&rnd_state) % n_sample < graph_node->sample[j].n_sample){
-            data[mipmap_offset + x] = graph_node->sample[j].color;
-            return;
-        }
-        n_sample -= graph_node->sample[j].n_sample;
-    }
-    data[mipmap_offset + x] = 0xFF00;
 }

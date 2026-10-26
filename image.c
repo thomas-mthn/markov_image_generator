@@ -2,6 +2,12 @@
 #include "memory.h"
 #include "tmath.h"
 
+static void* tReAlloc(void* ptr,size_t new_size){
+    tFree(ptr);
+    char* mem_new = tMalloc(new_size);
+    for(int i = 
+}
+
 static void* tMemset(void *s,int c,size_t n){
     uint8* p = s;
     while(n--)
@@ -606,6 +612,10 @@ enum{
 #define STBI_NOTUSED(v)  (void)sizeof(v)
 #endif
 
+static int zeof(StbiZbuf *z){
+    return (z->zbuffer >= z->zbuffer_end);
+}
+
 static uint8 zGet8(StbiZbuf *z){
     return zeof(z) ? 0 : *z->zbuffer++;
 }
@@ -757,10 +767,6 @@ static int huffmanZbuild(ZHuffman *z,const uint8 *sizelist,int num){
     return 1;
 }
 
-static int zeof(StbiZbuf *z){
-    return (z->zbuffer >= z->zbuffer_end);
-}
-
 static int zlibHeaderParse(StbiZbuf *a){
     int cmf = zGet8(a);
     int cm = cmf & 15;
@@ -776,6 +782,60 @@ static int zlibHeaderParse(StbiZbuf *a){
         return 0; // DEFLATE required for png
     // window = 1 << (8 + cinfo)... but who cares, we fully buffer output
     return 1;
+}
+
+static int zhuffmanSlowpathDecode(StbiZbuf *a,ZHuffman *z){
+    int b,s,k;
+    // not resolved by fast table, so compute it the slow way
+    // use jpeg approach, which requires MSbits at top
+    k = bitReverse(a->code_buffer, 16);
+    for(s = STBI__ZFAST_BITS+1;;++s)
+        if(k < z->maxcode[s])
+            break;
+    if(s >= 16) 
+        return -1; // invalid code!
+    // code size is s, so:
+    b = (k >> (16-s)) - z->firstcode[s] + z->firstsymbol[s];
+    if(b >= STBI__ZNSYMS) 
+        return -1; // some data was corrupt somewhere!
+    if(z->size[b] != s) 
+        return -1;  // was originally an assert, but report failure instead.
+    a->code_buffer >>= s;
+    a->num_bits -= s;
+    return z->value[b];
+}
+
+#define STBI__ZFAST_MASK  ((1 << STBI__ZFAST_BITS) - 1)
+
+static int zhuffmanDecode(StbiZbuf *a,ZHuffman *z){
+    int b,s;
+    if(a->num_bits < 16){
+        if(zeof(a)){
+            if(!a->hit_zeof_once){
+                // This is the first time we hit eof, insert 16 extra padding btis
+                // to allow us to keep going; if we actually consume any of them
+                // though, that is invalid data. This is caught later.
+                a->hit_zeof_once = 1;
+                a->num_bits += 16; // add 16 implicit zero bits
+            } 
+            else {
+                // We already inserted our extra 16 padding bits and are again
+                // out, this stream is actually prematurely terminated.
+                return -1;
+            }
+        } 
+        else {
+            bitsFill(a);
+        }
+    }
+    b = z->fast[a->code_buffer & STBI__ZFAST_MASK];
+    if(b){
+        s = b >> 9;
+        a->code_buffer >>= s;
+        a->num_bits -= s;
+        return b & 511;
+    }
+    return zhuffmanSlowpathDecode(a, z);
 }
 
 static int huffmanCodesCompute(StbiZbuf *a){
@@ -832,60 +892,6 @@ static int huffmanCodesCompute(StbiZbuf *a){
     if (!huffmanZbuild(&a->z_length, lencodes, hlit)) return 0;
     if (!huffmanZbuild(&a->z_distance, lencodes+hlit, hdist)) return 0;
     return 1;
-}
-
-static int zhuffmanSlowpathDecode(StbiZbuf *a,ZHuffman *z){
-    int b,s,k;
-    // not resolved by fast table, so compute it the slow way
-    // use jpeg approach, which requires MSbits at top
-    k = bitReverse(a->code_buffer, 16);
-    for(s = STBI__ZFAST_BITS+1;;++s)
-        if(k < z->maxcode[s])
-            break;
-    if(s >= 16) 
-        return -1; // invalid code!
-    // code size is s, so:
-    b = (k >> (16-s)) - z->firstcode[s] + z->firstsymbol[s];
-    if(b >= STBI__ZNSYMS) 
-        return -1; // some data was corrupt somewhere!
-    if(z->size[b] != s) 
-        return -1;  // was originally an assert, but report failure instead.
-    a->code_buffer >>= s;
-    a->num_bits -= s;
-    return z->value[b];
-}
-
-#define STBI__ZFAST_MASK  ((1 << STBI__ZFAST_BITS) - 1)
-
-static int zhuffmanDecode(StbiZbuf *a,ZHuffman *z){
-    int b,s;
-    if(a->num_bits < 16){
-        if(zeof(a)){
-            if(!a->hit_zeof_once){
-                // This is the first time we hit eof, insert 16 extra padding btis
-                // to allow us to keep going; if we actually consume any of them
-                // though, that is invalid data. This is caught later.
-                a->hit_zeof_once = 1;
-                a->num_bits += 16; // add 16 implicit zero bits
-            } 
-            else {
-                // We already inserted our extra 16 padding bits and are again
-                // out, this stream is actually prematurely terminated.
-                return -1;
-            }
-        } 
-        else {
-            bitsFill(a);
-        }
-    }
-    b = z->fast[a->code_buffer & STBI__ZFAST_MASK];
-    if(b){
-        s = b >> 9;
-        a->code_buffer >>= s;
-        a->num_bits -= s;
-        return b & 511;
-    }
-    return zhuffmanSlowpathDecode(a, z);
 }
 
 static const int stbi__zlength_base[31] = {

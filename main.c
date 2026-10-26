@@ -2,33 +2,16 @@
 #include "main.h"
 #include "tmath.h"
 #include "vec3.h"
-#include "memory.h"
 
 #ifdef __wasm__
 #include <wasm_simd128.h>
 #else
-#include <intrin.h>
-#include "kernel.h"
+#include <immintrin.h>
 #endif
 
-#pragma function(memset)
-void *memset(void *s,int c,size_t n) {
-    uint8 *p = s;
-    while(n--){
-        *p++ = (uint8)c;
-    }
-    return s;
-}
-
-#pragma function(memcpy)
-void* memcpy(void* dest,const void* src,size_t n) {
-    uint8* d = dest;
-    const uint8* s = src;
-    while (n--) {
-        *d++ = *s++;
-    }
-    return dest;
-}
+#ifdef _WIN32
+#include "kernel.h"
+#endif
 
 #if defined(_MSC_VER) && !defined(__POCC__)
 int _fltused = 0;
@@ -554,7 +537,7 @@ void extractImageColor(int* data,int width,int height,int mipmap,int offset,int 
     graph_color[mipmap].n_color_randrange = index;
 }
 
-#ifdef __wasm__
+#if defined(__wasm__) || defined(__linux__)
 int n_threads = 1;
 #else
 int n_threads;
@@ -570,6 +553,7 @@ structure(PixelFillThreadInfo){
     int* data;  
     int amount;
     bool inpaint;
+    bool brute_force;
 };
 
 static unsigned stdcall fillPixelsColor(void* arg){
@@ -578,6 +562,8 @@ static unsigned stdcall fillPixelsColor(void* arg){
     int mipmap_offset = mipmapOffset(info->width,info->height,info->mipmap);
     int mipmap_width = info->width >> info->mipmap;
     int mipmap_size = mipmap_width * (info->height >> info->mipmap);
+
+    Graph* graph = graph_color + info->mipmap;
 
     for(int i = 0;i < info->amount;i++){
         int layer_weight = (info->offset + i << 8) / ((mipmap_size)) << 8;
@@ -606,11 +592,11 @@ static unsigned stdcall fillPixelsColor(void* arg){
 
             if(color >> 24 & 0x02){
                 for(int c = 0;c < 3;c++)
-                    graph_color[info->mipmap].weights_inverse[k * 3 + c] = 0;
+                    graph->weights_inverse[k * 3 + c] = 0;
             }
             else{
                 for(int c = 0;c < 3;c++)
-                    graph_color[info->mipmap].weights_inverse[k * 3 + c] = fixedDivR(FIXED_ONE,weights[k]) >> 4;
+                    graph->weights_inverse[k * 3 + c] = fixedDivR(FIXED_ONE,weights[k]) >> 4;
             }
             for(int c = 0;c < 3;c++)
                 position[k * 3 + c] = (color >> c * 8 & 0xFF);
@@ -628,8 +614,23 @@ static unsigned stdcall fillPixelsColor(void* arg){
         int min_score = INT_MAX;
         int min_index;
 
-        graph_node = graphInference(graph_color + info->mipmap,position);
+        if(info->brute_force){
+            int m_score = INT_MAX;
+            graph_node = 0;
 
+            for(int i = 0;i < graph->n_nodes;i++){
+                GraphNode* node = graph->entry + i;
+                int score = getProbabilityDistance(graph,node,position);
+                if(score < m_score){
+                    graph_node = node;
+                    m_score = score;
+                }
+            }
+        }
+        else{
+            graph_node = graphInference(graph,position);
+        }
+        
         if(!graph_node)
             continue;
 
@@ -709,9 +710,9 @@ void generateColorInitLayer(int* data,int* indices,int mipmap,int width,int heig
     shuffle(indices,mipmap_size);
 }
 
-void generateColor(int* data,int* indices,int offset,int amount,int mipmap,int width,int height,bool inpaint){
+void generateColor(int* data,int* indices,int offset,int amount,int mipmap,int width,int height,bool inpaint,bool brute_force){
     indices += offset;
-#ifdef __wasm__
+#if defined(__wasm__) || defined(__linux__)
     PixelFillThreadInfo info = {
         .indices = indices,
         .amount = amount,
@@ -721,6 +722,7 @@ void generateColor(int* data,int* indices,int offset,int amount,int mipmap,int w
         .data = data,
         .inpaint = inpaint,
         .offset = offset,
+        .brute_force = brute_force,
     };
     fillPixelsColor(&info);
 #else

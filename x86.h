@@ -1,7 +1,7 @@
 #ifndef X86_H
 #define X86_H
 
-#include <intrin.h>
+#include <immintrin.h>
 
 static unsigned x86Rdtsc(){
     return __rdtsc();

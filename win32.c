@@ -1,13 +1,9 @@
 #include "langext.h"
 #include "fixed.h"
 #include "kernel.h"
-#include "user.h"
 #include "gdi.h"
 #include "main.h"
-#include "vec3.h"
 #include "tmath.h"
-#include "opencl.h"
-#include "sfx.h"
 #include "memory.h"
 #include "image.h"
 
@@ -400,13 +396,13 @@ static unsigned stdcall clientHandler(void* arg){
             int* png_data = serverMalloc(size);
             ReadFile(file,png_data,size,0,0);
             CloseHandle(file);
-            image = pngDecode(png_data,size,&width,&height,&image_components,0);
+            image = pngDecode((uint8*)png_data,size,&width,&height,&image_components,0);
             if(!image){
                 print(STRING_LITERAL("incorrect image file\n"));
                 goto connection_closed;
             }
         }
-        if(width * height > 0x10000 || width <= 0 || width > IMAGE_SIZE_MAX || height <= 0 || height > IMAGE_SIZE_MAX){
+        if(width * height > 0x40000 || width <= 0 || width > IMAGE_SIZE_MAX || height <= 0 || height > IMAGE_SIZE_MAX){
             print(STRING_LITERAL("incorrect image size\n"));
             httpSendUnprocessableContent(client);
             goto connection_closed;
@@ -742,7 +738,7 @@ int main(void){
     Bind(server_socket,&server_address,sizeof(SockAddr));
     Listen(server_socket,SOMAXCONN);
 
-    loop{
+    for(;;){
         size_t* client = serverMalloc(sizeof(size_t));
         *client = Accept(server_socket,(SockAddr*)INADDR_ANY,0);
 

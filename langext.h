@@ -15,6 +15,8 @@ typedef uint32_t uint32;
 typedef int64_t  int64;
 typedef uint64_t uint64;
 
+typedef void (*funcptr_t)(void);
+
 #define atomic _Atomic
 
 #if !defined(__STDC_VERSION__) || __STDC_VERSION__ < 202311L
@@ -36,14 +38,12 @@ typedef uint64_t uint64;
 
 #define repeat(AMOUNT) for(size_t I##__LINE__ = AMOUNT;I##__LINE__--;)
 
-#if __wasm__
-#define stdcall
-#else
+#if _MSC_VER
 #define stdcall _stdcall
+#else
+#define stdcall
 #endif
 
 #define alignas(AMOUNT) _declspec(align(AMOUNT))
-
-#define loop for(;;)
 
 #endif

@@ -1,0 +1,28 @@
+body {
+	background-color: #202020;
+	color: #C0C0C0;
+}
+
+button {
+    background-color: #C06060;
+}
+
+.button_group{
+    border-width: 3px;
+    border-color: #A04040;
+    border-style: ridge;
+    width: 750px;
+    display: flex;
+    justify-content: center;
+}
+
+.button_group > * {
+    align-self: center;
+    margin-left: 3px;
+    margin-right: 3px;
+    flex: 1;
+}
+
+input[type="range"] {
+    background: #C06060;
+}

@@ -3,12 +3,7 @@
 	<head>
 		<meta charset="UTF-8">
 		<title>image generator</title>
-		<style>
-			body {
-				background-color: #202020;
-				color: #C0C0C0;
-			}
-		</style>
+        <link rel="stylesheet" href="main.css">
 	</head>
 	<body>
 		<a>train</a>
@@ -27,20 +22,21 @@
 		<a>remix mipmap</a>
 		<input id="remix_mipmap" type="range" min="1" max="16" step="1" value="4">
 		<a id="remix_mipmap_value">4</a><br><br>
-		<div id="client_buttons">
+		<div id="client_buttons" class="button_group">
+            <h3>client: </h3>
 			<button onclick="imageGenerate()">generate</button>
 			<button onclick="remixImage()">remix</button>
 			<button onclick="imageOutpaint()">outpaint</button>
 			<button onclick="inpaintImage()">inpaint</button>
 			<button onclick="inpaintReverse()">inpaint reverse</button>
-		</div>
-		<br><br>
-		<div id="server_buttons_main">
-			<button onclick="serverGenerateImage()">server generate</button>
-			<button onclick="serverRemixImage()">server remix</button>
-			<button onclick="serverOutpaintImage()">server outpaint</button>
-			<button onclick="serverTrain()">server train</button>
-			<button onclick="modelReset()">reset model</button>
+		</div><br>
+		<div id="server_buttons_main" class="button_group">
+            <h3>server: </h3>
+			<button onclick="serverGenerateImage()">generate</button>
+			<button onclick="serverRemixImage()">remix</button>
+			<button onclick="serverOutpaintImage()">outpaint</button>
+			<button onclick="serverTrain()">train</button>
+			<button onclick="modelReset()">model</button>
 		</div>
 		<div id="server_buttons_generate" style="display:none">
 			<a>get the image from: </a>
@@ -52,6 +48,7 @@
 		<div id="cloud_generated"></div><br>
 		<progress id="progress_bar" value="0"></progress><br>
 		<canvas width="768" height="768" id="canvas" style="border: 2px solid white"></canvas><br>
+        <button onclick="imageExport()">export</button>
 	</body>
 </html>
 <script src="main.js"></script>

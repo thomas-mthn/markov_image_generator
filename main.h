@@ -100,7 +100,7 @@ static Vec3 pixelColorToColor(int color){
 
 void generateColorInit(int* data,int mipmap,int width,int height);
 void generateColorInitLayer(int* data,int* indices,int mipmap,int width,int height);
-void generateColor(int* data,int* indices,int offset,int amount,int mipmap,int width,int height,bool inpaint);
+void generateColor(int* data,int* indices,int offset,int amount,int mipmap,int width,int height,bool inpaint,bool brute_force);
 void generateMipmaps(Texture* texture);
 void extractImageColor(int* data,int width,int height,int mipmap,int offset,int amount);
 
